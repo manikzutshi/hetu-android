@@ -1,0 +1,470 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.aurafarmers.hetu.ui.screens.journal
+
+import android.Manifest
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.navigation.NavController
+import com.aurafarmers.hetu.ui.theme.HetuColors
+import kotlinx.coroutines.launch
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import com.aurafarmers.hetu.ai.LLMService
+import com.aurafarmers.hetu.ai.STTService
+import com.aurafarmers.hetu.ai.AudioRecorder
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.RepeatMode
+
+@Composable
+fun JournalScreen(
+    navController: NavController
+) {
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    
+    // Manual Instantiation of Services to avoid Hilt EntryPoint complexity in Composable
+    val llmService = remember { LLMService(context) }
+    val sttService = remember { STTService(context) }
+    val audioRecorder = remember { AudioRecorder(context) }
+    
+    // State
+    var inputText by remember { mutableStateOf("") }
+    var isRecording by remember { mutableStateOf(false) }
+    var isProcessing by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    
+    // Messages state
+    val messages = remember { mutableStateListOf(
+        ChatMessage(
+            id = "welcome",
+            content = "Hi, I'm Hetu. I'm here to listen. How are you feeling today?",
+            isUser = false,
+            timestamp = java.time.LocalDateTime.now()
+        )
+    ) }
+
+    // Auto-scroll on new message
+    LaunchedEffect(messages.size) {
+        listState.animateScrollToItem(messages.size - 1)
+    }
+    
+    // Ensure models are loaded
+    LaunchedEffect(Unit) {
+        // Run in background to avoid blocking UI
+        launch {
+            if (!llmService.isLoaded()) llmService.loadModel()
+        }
+        launch {
+            if (!sttService.isLoaded()) sttService.loadModel()
+        }
+    }
+
+    // Permission launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+             // Permission granted
+        } else {
+            Toast.makeText(context, "Microphone permission needed for voice chat", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    // Model file picker for selecting GGUF model
+    var isModelAvailable by remember { mutableStateOf(llmService.isModelAvailable()) }
+    var isCopyingModel by remember { mutableStateOf(false) }
+    
+    val modelFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            isCopyingModel = true
+            scope.launch {
+                val success = llmService.copyModelFromUri(uri)
+                if (success) {
+                    isModelAvailable = true
+                    Toast.makeText(context, "Model copied successfully! Loading...", Toast.LENGTH_SHORT).show()
+                    llmService.loadModel()
+                } else {
+                    Toast.makeText(context, "Failed to copy model file", Toast.LENGTH_SHORT).show()
+                }
+                isCopyingModel = false
+            }
+        }
+    }
+
+    fun sendMessage() {
+        if (inputText.isBlank()) return
+        
+        val userMsg = inputText.trim()
+        inputText = ""
+        focusManager.clearFocus()
+        
+        messages.add(
+            ChatMessage(
+                id = java.util.UUID.randomUUID().toString(),
+                content = userMsg,
+                isUser = true,
+                timestamp = java.time.LocalDateTime.now()
+            )
+        )
+        
+        isProcessing = true
+        
+        scope.launch {
+            try {
+                // Generate AI response
+                val response = llmService.chat(userMsg)
+                
+                messages.add(
+                    ChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        content = response,
+                        isUser = false,
+                        timestamp = java.time.LocalDateTime.now()
+                    )
+                )
+            } catch (e: Exception) {
+                messages.add(
+                    ChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        content = "Sorry, I'm having trouble thinking right now. (${e.message})",
+                        isUser = false,
+                        timestamp = java.time.LocalDateTime.now()
+                    )
+                )
+            } finally {
+                isProcessing = false
+            }
+        }
+    }
+    
+    fun toggleRecording() {
+        if (isRecording) {
+            // Stop recording
+            audioRecorder.stopRecording()
+            isRecording = false
+        } else {
+            // Start recording
+            if (!audioRecorder.hasPermission()) {
+                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                return
+            }
+            
+            isRecording = true
+            scope.launch {
+                try {
+                    // This suspends until max duration or stopRecording() is called
+                    val audioData = audioRecorder.recordAudio()
+                    
+                    if (audioData.isNotEmpty()) {
+                        isProcessing = true
+                        val transcription = sttService.transcribe(audioData)
+                        if (transcription.isSuccess) {
+                            inputText = transcription.text
+                        } else {
+                            Toast.makeText(context, "Could not hear you clearly", Toast.LENGTH_SHORT).show()
+                        }
+                        isProcessing = false
+                    }
+                } catch (e: Exception) {
+                    isProcessing = false
+                    isRecording = false
+                }
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Hetu Journal") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = HetuColors.Cream,
+                    titleContentColor = HetuColors.DarkBrown
+                )
+            )
+        },
+        bottomBar = {
+            // Input Area
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(HetuColors.Cream)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { toggleRecording() },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(if (isRecording) HetuColors.Terracotta else HetuColors.Sage, CircleShape)
+                ) {
+                    Icon(
+                        if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                        contentDescription = "Voice Input",
+                        tint = Color.White
+                    )
+                }
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    placeholder = { Text(if (isRecording) "Listening..." else "Type your thoughts...") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(24.dp)),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
+                        focusedBorderColor = HetuColors.Sage,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    maxLines = 3,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { sendMessage() })
+                )
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                IconButton(
+                    onClick = { sendMessage() },
+                    enabled = inputText.isNotBlank() && !isProcessing,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            if (inputText.isNotBlank()) HetuColors.DarkBrown else HetuColors.Taupe, 
+                            CircleShape
+                        )
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White)
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(HetuColors.Cream, Color(0xFFE8F5E9))
+                    )
+                )
+                .padding(paddingValues)
+        ) {
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(16.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Show model selection button when model is not available
+                if (!isModelAvailable && !isCopyingModel) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            colors = CardDefaults.cardColors(containerColor = HetuColors.Terracotta.copy(alpha = 0.1f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    "AI Model Required",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = HetuColors.DarkBrown
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "Select your Llama GGUF model file to enable AI chat",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = HetuColors.Taupe
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = { modelFilePicker.launch("*/*") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = HetuColors.Sage)
+                                ) {
+                                    Text("Select Model File")
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                if (isCopyingModel) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            colors = CardDefaults.cardColors(containerColor = HetuColors.Sage.copy(alpha = 0.1f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    "📥 Copying model file...",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = HetuColors.DarkBrown
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "This takes 1-3 minutes. Please wait and don't close the app.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = HetuColors.Taupe
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                items(messages) { message ->
+                    MessageBubble(message)
+                }
+                
+                if (isProcessing && !isRecording) {
+                    item {
+                        ThinkingBubble()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MessageBubble(message: ChatMessage) {
+    val isUser = message.isUser
+    val backgroundColor = if (isUser) HetuColors.Sage else Color.White
+    val textColor = if (isUser) Color.White else HetuColors.DarkBrown
+    val alignment = if (isUser) Alignment.End else Alignment.Start
+    
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalAlignment = alignment
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = if (isUser) 16.dp else 4.dp,
+                        bottomEnd = if (isUser) 4.dp else 16.dp
+                    )
+                )
+                .background(backgroundColor)
+                .padding(12.dp)
+        ) {
+            Text(
+                text = message.content,
+                color = textColor,
+                fontSize = 16.sp,
+                lineHeight = 24.sp
+            )
+        }
+        
+        Text(
+            text = message.timestamp.format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())),
+            fontSize = 10.sp,
+            color = Color.Gray,
+            modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp)
+        )
+    }
+}
+
+@Composable
+fun ThinkingBubble() {
+    val infiniteTransition = rememberInfiniteTransition(label = "thinking")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Row(
+        modifier = Modifier
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.7f))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Use a simple Box with animated alpha instead of CircularProgressIndicator
+        // to completely bypass the crashing AnimationSpec in Material3 library if it persists
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(HetuColors.Sage.copy(alpha = alpha), CircleShape)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(HetuColors.Sage.copy(alpha = alpha), CircleShape)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .background(HetuColors.Sage.copy(alpha = alpha), CircleShape)
+        )
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        Text("Hetu is thinking...", fontSize = 12.sp, color = Color.Gray)
+    }
+}
+
+data class ChatMessage(
+    val id: String,
+    val content: String,
+    val isUser: Boolean,
+    val timestamp: java.time.LocalDateTime
+)
