@@ -1,47 +1,57 @@
 package com.aurafarmers.hetu.ui.screens.journal
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.aurafarmers.hetu.data.local.entity.MessageEntity
 import com.aurafarmers.hetu.data.repository.MessageRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.time.LocalDateTime
 import javax.inject.Inject
-
-data class JournalUiState(
-    val messages: List<MessageEntity> = emptyList(),
-    val inputText: String = "",
-    val isRecording: Boolean = false,
-    val isListening: Boolean = false,
-    val isProcessing: Boolean = false,
-    val isSpeaking: Boolean = false,
-    val isLoading: Boolean = true,
-    val vadConfidence: Float = 0f,
-    val error: String? = null
-)
 
 @HiltViewModel
 class JournalViewModel @Inject constructor(
     private val messageRepository: MessageRepository
-    // AI Services removed to avoid Hilt errors
 ) : ViewModel() {
-    
-    private val _uiState = MutableStateFlow(JournalUiState())
-    val uiState: StateFlow<JournalUiState> = _uiState.asStateFlow()
-    
-    init {
-        // init logic removed for build safety
+
+    // Load messages from DB, convert to UI state
+    val messages: StateFlow<List<MessageEntity>> = messageRepository.getAllMessages()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun addUserMessage(content: String) {
+        viewModelScope.launch {
+            messageRepository.insert(
+                MessageEntity(
+                    text = content,
+                    isUser = true,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    fun addAiMessage(content: String) {
+        viewModelScope.launch {
+            messageRepository.insert(
+                MessageEntity(
+                    text = content,
+                    isUser = false,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+        }
     }
     
-    // Method stubs to prevent compilation errors if referenced
-    fun setInputText(text: String) {}
-    fun startListening() {}
-    fun toggleRecording() {}
-    fun stopListening() {}
-    fun sendMessage() {}
-    fun stopSpeaking() {}
-    fun clearError() {}
-    fun clearAllMessages() {}
+    fun clearMessages() {
+        viewModelScope.launch {
+            messageRepository.deleteAll()
+        }
+    }
 }

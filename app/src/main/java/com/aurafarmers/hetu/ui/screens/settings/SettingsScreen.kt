@@ -13,15 +13,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aurafarmers.hetu.data.local.preferences.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
-    var darkMode by remember { mutableStateOf(false) }
-    var notifications by remember { mutableStateOf(true) }
+    val themeMode by viewModel.themeMode.collectAsState()
+    val notifFrequency by viewModel.notificationFrequency.collectAsState()
+    val notifPersonality by viewModel.notificationPersonality.collectAsState()
     
+    var themeExpanded by remember { mutableStateOf(false) }
+    var freqExpanded by remember { mutableStateOf(false) }
+    var personaExpanded by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -30,7 +37,10 @@ fun SettingsScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         }
     ) { padding ->
@@ -41,7 +51,130 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp)
         ) {
+            // Appearance
+            Text(
+                "Appearance",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            SettingsRow(
+                icon = Icons.Outlined.DarkMode,
+                title = "Theme",
+                subtitle = when(themeMode) {
+                    ThemeMode.LIGHT -> "Light Mode"
+                    ThemeMode.DARK -> "Dark Mode"
+                    ThemeMode.SYSTEM -> "System Default"
+                },
+                trailing = {
+                    Box {
+                        IconButton(onClick = { themeExpanded = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Select Theme")
+                        }
+                        DropdownMenu(
+                            expanded = themeExpanded,
+                            onDismissRequest = { themeExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("System Default") },
+                                onClick = { 
+                                    viewModel.setThemeMode(ThemeMode.SYSTEM)
+                                    themeExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Light Mode") },
+                                onClick = { 
+                                    viewModel.setThemeMode(ThemeMode.LIGHT)
+                                    themeExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Dark Mode") },
+                                onClick = { 
+                                    viewModel.setThemeMode(ThemeMode.DARK)
+                                    themeExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Notifications
+            Text(
+                "Notifications",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            SettingsRow(
+                icon = Icons.Outlined.Notifications,
+                title = "Frequency",
+                subtitle = notifFrequency,
+                trailing = {
+                    Box {
+                        IconButton(onClick = { freqExpanded = true }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit Frequency")
+                        }
+                        DropdownMenu(
+                            expanded = freqExpanded,
+                            onDismissRequest = { freqExpanded = false }
+                        ) {
+                            listOf("Daily", "Every 2 Days", "Weekly").forEach { freq ->
+                                DropdownMenuItem(
+                                    text = { Text(freq) },
+                                    onClick = {
+                                        viewModel.setNotificationFrequency(freq)
+                                        freqExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            SettingsRow(
+                icon = Icons.Outlined.Person,
+                title = "Personality",
+                subtitle = notifPersonality,
+                trailing = {
+                    Box {
+                        IconButton(onClick = { personaExpanded = true }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit Personality")
+                        }
+                        DropdownMenu(
+                            expanded = personaExpanded,
+                            onDismissRequest = { personaExpanded = false }
+                        ) {
+                            listOf("Friendly", "Direct", "Philosophical", "Warm").forEach { persona ->
+                                DropdownMenuItem(
+                                    text = { Text(persona) },
+                                    onClick = {
+                                        viewModel.setNotificationPersonality(persona)
+                                        personaExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+            
             // Privacy Section
+            Spacer(modifier = Modifier.height(24.dp))
+            
             Text(
                 "Privacy",
                 style = MaterialTheme.typography.titleSmall,
@@ -85,85 +218,8 @@ fun SettingsScreen(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Appearance
-            Text(
-                "Appearance",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            SettingsRow(
-                icon = Icons.Outlined.DarkMode,
-                title = "Dark Mode",
-                subtitle = "Use dark theme",
-                trailing = {
-                    Switch(
-                        checked = darkMode,
-                        onCheckedChange = { darkMode = it }
-                    )
-                }
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Notifications
-            Text(
-                "Notifications",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            SettingsRow(
-                icon = Icons.Outlined.Notifications,
-                title = "Check-in Reminders",
-                subtitle = "Get notified to log outcomes",
-                trailing = {
-                    Switch(
-                        checked = notifications,
-                        onCheckedChange = { notifications = it }
-                    )
-                }
-            )
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Data
-            Text(
-                "Data",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            SettingsRow(
-                icon = Icons.Outlined.FileDownload,
-                title = "Export Data",
-                subtitle = "Download all your entries as JSON",
-                onClick = { /* TODO */ }
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            SettingsRow(
-                icon = Icons.Outlined.DeleteForever,
-                title = "Delete All Data",
-                subtitle = "Permanently remove all entries",
-                isDestructive = true,
-                onClick = { /* TODO: Show confirmation dialog */ }
-            )
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
             // About
-            Text(
+             Text(
                 "About",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
@@ -194,24 +250,7 @@ fun SettingsScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Version 1.0.0",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "Team Aura Farmers",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "J.C. Bose University",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "Powered by RunAnywhere SDK",
+                        "Version 1.1.0",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

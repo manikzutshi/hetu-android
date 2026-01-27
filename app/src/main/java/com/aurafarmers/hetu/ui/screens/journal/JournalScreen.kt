@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,7 +49,8 @@ import androidx.compose.animation.core.RepeatMode
 
 @Composable
 fun JournalScreen(
-    navController: NavController
+    navController: NavController,
+    viewModel: JournalViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -65,19 +67,40 @@ fun JournalScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     
-    // Messages state
-    val messages = remember { mutableStateListOf(
-        ChatMessage(
-            id = "welcome",
-            content = "Hi, I'm Hetu. I'm here to listen. How are you feeling today?",
-            isUser = false,
-            timestamp = java.time.LocalDateTime.now()
-        )
-    ) }
+    // Messages from DB
+    val dbMessages by viewModel.messages.collectAsState(initial = emptyList())
+    
+    // Convert DB entities to ChatMessage for UI
+    val messages = remember(dbMessages) {
+        if (dbMessages.isEmpty()) {
+            listOf(
+                ChatMessage(
+                    id = "welcome",
+                    content = "Hi, I'm Hetu. I'm here to listen. How are you feeling today?",
+                    isUser = false,
+                    timestamp = java.time.LocalDateTime.now()
+                )
+            )
+        } else {
+            dbMessages.map { 
+                ChatMessage(
+                    id = it.id.toString(),
+                    content = it.text,
+                    isUser = it.isUser,
+                    timestamp = java.time.LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(it.timestamp), 
+                        java.time.ZoneId.systemDefault()
+                    )
+                )
+            }
+        }
+    }
 
     // Auto-scroll on new message
     LaunchedEffect(messages.size) {
-        listState.animateScrollToItem(messages.size - 1)
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
     }
     
     // Ensure models are loaded
@@ -129,17 +152,12 @@ fun JournalScreen(
         if (inputText.isBlank()) return
         
         val userMsg = inputText.trim()
+        val currentInput = inputText // Capture for async usage
         inputText = ""
         focusManager.clearFocus()
         
-        messages.add(
-            ChatMessage(
-                id = java.util.UUID.randomUUID().toString(),
-                content = userMsg,
-                isUser = true,
-                timestamp = java.time.LocalDateTime.now()
-            )
-        )
+        // Save user message to DB
+        viewModel.addUserMessage(userMsg)
         
         isProcessing = true
         
@@ -148,23 +166,10 @@ fun JournalScreen(
                 // Generate AI response
                 val response = llmService.chat(userMsg)
                 
-                messages.add(
-                    ChatMessage(
-                        id = java.util.UUID.randomUUID().toString(),
-                        content = response,
-                        isUser = false,
-                        timestamp = java.time.LocalDateTime.now()
-                    )
-                )
+                // Save AI response to DB
+                viewModel.addAiMessage(response)
             } catch (e: Exception) {
-                messages.add(
-                    ChatMessage(
-                        id = java.util.UUID.randomUUID().toString(),
-                        content = "Sorry, I'm having trouble thinking right now. (${e.message})",
-                        isUser = false,
-                        timestamp = java.time.LocalDateTime.now()
-                    )
-                )
+                viewModel.addAiMessage("Sorry, I'm having trouble thinking right now. (${e.message})")
             } finally {
                 isProcessing = false
             }
@@ -210,15 +215,35 @@ fun JournalScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Hetu Journal") },
+                title = { 
+                    Column {
+                        Text("Hetu Journal")
+                        if (isModelAvailable) {
+                            Text(
+                                "Model: Llama 1B (Fast)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = HetuColors.Sage
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    IconButton(onClick = { viewModel.clearMessages() }) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Clear Chat",
+                            tint = HetuColors.Terracotta
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = HetuColors.Cream,
-                    titleContentColor = HetuColors.DarkBrown
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
                 )
             )
         },
@@ -227,7 +252,7 @@ fun JournalScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(HetuColors.Cream)
+                    .background(MaterialTheme.colorScheme.background)
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -235,12 +260,16 @@ fun JournalScreen(
                     onClick = { toggleRecording() },
                     modifier = Modifier
                         .size(48.dp)
-                        .background(if (isRecording) HetuColors.Terracotta else HetuColors.Sage, CircleShape)
+                        .background(
+                            if (isRecording) MaterialTheme.colorScheme.error 
+                            else MaterialTheme.colorScheme.tertiary, 
+                            CircleShape
+                        )
                 ) {
                     Icon(
                         if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
                         contentDescription = "Voice Input",
-                        tint = Color.White
+                        tint = MaterialTheme.colorScheme.onTertiary
                     )
                 }
                 
@@ -254,9 +283,9 @@ fun JournalScreen(
                         .weight(1f)
                         .clip(RoundedCornerShape(24.dp)),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
-                        focusedBorderColor = HetuColors.Sage,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.tertiary,
                         unfocusedBorderColor = Color.Transparent
                     ),
                     maxLines = 3,
@@ -272,11 +301,15 @@ fun JournalScreen(
                     modifier = Modifier
                         .size(48.dp)
                         .background(
-                            if (inputText.isNotBlank()) HetuColors.DarkBrown else HetuColors.Taupe, 
+                            if (inputText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, 
                             CircleShape
                         )
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send", tint = Color.White)
+                    Icon(
+                        Icons.Default.Send, 
+                        contentDescription = "Send", 
+                        tint = if (inputText.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -284,11 +317,7 @@ fun JournalScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(HetuColors.Cream, Color(0xFFE8F5E9))
-                    )
-                )
+                .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
             LazyColumn(
@@ -376,8 +405,18 @@ fun JournalScreen(
 @Composable
 fun MessageBubble(message: ChatMessage) {
     val isUser = message.isUser
-    val backgroundColor = if (isUser) HetuColors.Sage else Color.White
-    val textColor = if (isUser) Color.White else HetuColors.DarkBrown
+    
+    // User: Sage (Tertiary), AI: Surface/Secondary
+    val backgroundColor = if (isUser) 
+        MaterialTheme.colorScheme.tertiary 
+    else 
+        MaterialTheme.colorScheme.surfaceVariant
+        
+    val textColor = if (isUser) 
+        MaterialTheme.colorScheme.onTertiary 
+    else 
+        MaterialTheme.colorScheme.onSurfaceVariant
+        
     val alignment = if (isUser) Alignment.End else Alignment.Start
     
     Column(
@@ -410,7 +449,7 @@ fun MessageBubble(message: ChatMessage) {
         Text(
             text = message.timestamp.format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())),
             fontSize = 10.sp,
-            color = Color.Gray,
+            color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp)
         )
     }

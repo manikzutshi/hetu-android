@@ -10,33 +10,21 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-data class TimelineItem(
-    val id: Int,
-    val date: String,
-    val type: String, // "action" or "outcome"
-    val category: String,
-    val description: String
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimelineScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: TimelineViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
-    // Sample data - replace with actual database query
-    val items = listOf(
-        TimelineItem(1, "Today", "action", "🧘 Wellness", "Started 10-min morning meditation"),
-        TimelineItem(2, "Today", "outcome", "😊 Mood", "Feeling calmer than usual"),
-        TimelineItem(3, "Yesterday", "action", "😴 Sleep", "No screens after 9pm"),
-        TimelineItem(4, "Yesterday", "outcome", "⚡ Energy", "Woke up with more energy"),
-        TimelineItem(5, "2 days ago", "action", "🥗 Food", "Cut out sugar for the week"),
-    )
+    val items by viewModel.timelineItems.collectAsState(initial = emptyList())
     
     Scaffold(
         topBar = {
@@ -51,11 +39,7 @@ fun TimelineScreen(
                         )
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+                navigationIcon = {},
             )
         }
     ) { padding ->

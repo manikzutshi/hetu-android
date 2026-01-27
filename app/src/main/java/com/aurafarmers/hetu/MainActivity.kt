@@ -11,21 +11,29 @@ import androidx.compose.ui.Modifier
 import com.aurafarmers.hetu.ui.navigation.HetuNavGraph
 import com.aurafarmers.hetu.ui.theme.HetuTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     
+    @Inject
+    lateinit var preferences: com.aurafarmers.hetu.data.local.preferences.HetuPreferences
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
         setContent {
-            HetuTheme {
+            val themeMode by preferences.themeMode.collectAsState(initial = com.aurafarmers.hetu.data.local.preferences.ThemeMode.SYSTEM)
+            
+            HetuTheme(themeMode = themeMode) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    HetuNavGraph()
+                    com.aurafarmers.hetu.ui.screens.MainScreen()
                 }
             }
         }

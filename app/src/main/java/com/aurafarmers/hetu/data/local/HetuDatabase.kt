@@ -12,6 +12,8 @@ import com.aurafarmers.hetu.data.local.entity.ActionEntity
 import com.aurafarmers.hetu.data.local.entity.InsightEntity
 import com.aurafarmers.hetu.data.local.entity.MessageEntity
 import com.aurafarmers.hetu.data.local.entity.OutcomeEntity
+import com.aurafarmers.hetu.data.local.entity.FeedPostEntity
+import com.aurafarmers.hetu.data.local.dao.FeedPostDao
 import net.sqlcipher.database.SQLiteDatabase
 import net.sqlcipher.database.SupportFactory
 
@@ -20,9 +22,10 @@ import net.sqlcipher.database.SupportFactory
         ActionEntity::class,
         OutcomeEntity::class,
         MessageEntity::class,
-        InsightEntity::class
+        InsightEntity::class,
+        FeedPostEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class HetuDatabase : RoomDatabase() {
@@ -31,6 +34,7 @@ abstract class HetuDatabase : RoomDatabase() {
     abstract fun outcomeDao(): OutcomeDao
     abstract fun messageDao(): MessageDao
     abstract fun insightDao(): InsightDao
+    abstract fun feedPostDao(): FeedPostDao
     
     companion object {
         private const val DATABASE_NAME = "hetu_database.db"

@@ -54,6 +54,12 @@ object AppModule {
     fun provideInsightDao(database: HetuDatabase): InsightDao {
         return database.insightDao()
     }
+
+    @Provides
+    @Singleton
+    fun provideFeedPostDao(database: HetuDatabase): com.aurafarmers.hetu.data.local.dao.FeedPostDao {
+        return database.feedPostDao()
+    }
     
     // ============ AI Services ============
     

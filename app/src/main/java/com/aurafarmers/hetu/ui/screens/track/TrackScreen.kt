@@ -19,7 +19,8 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TrackScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: TrackViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
     var isAction by remember { mutableStateOf(true) }
     var description by remember { mutableStateOf("") }
@@ -49,8 +50,10 @@ fun TrackScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp)
         ) {
+            // ... (rest of UI code, keep UI same) ...
+            
             // Toggle: Action vs Outcome
-            Row(
+             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -204,7 +207,11 @@ fun TrackScreen(
             // Save button
             Button(
                 onClick = { 
-                    // TODO: Save to database
+                    if (isAction) {
+                        viewModel.saveAction(description, selectedCategory!!, expectation, daysUntilCheck)
+                    } else {
+                        viewModel.saveOutcome(description, selectedCategory!!)
+                    }
                     onBack()
                 },
                 modifier = Modifier

@@ -22,15 +22,12 @@ class LLMService(
 ) {
     companion object {
         private const val TAG = "LLMService"
-        // User's actual model filename
-        private const val MODEL_FILENAME = "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
-        // Minimum valid model size (1.5GB - Q4 3B model should be at least this)
-        private const val MIN_MODEL_SIZE_BYTES = 1_500_000_000L
-        // System prompt for Hetu's personality
-        private const val SYSTEM_PROMPT = """You are Hetu, a kind and empathetic journal companion. 
-You are a safe space for people to share their thoughts and feelings.
-You listen without judgment. Keep responses concise - 2-3 sentences typically.
-Do not give unsolicited advice. Ask thoughtful follow-up questions."""
+        // User's actual model filename - 1B model for faster inference
+        private const val MODEL_FILENAME = "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        // Minimum valid model size (500MB - Q4 1B model should be at least this)
+        private const val MIN_MODEL_SIZE_BYTES = 500_000_000L
+        // System prompt for Hetu's personality - Warm but concise for speed
+        private const val SYSTEM_PROMPT = """You are Hetu, a warm and empathetic journal companion. Keep responses concise (1-2 sentences) but natural. Ask a gentle follow-up question."""
     }
     
     private var smolLM: SmolLM? = null
@@ -179,7 +176,7 @@ Do not give unsolicited advice. Ask thoughtful follow-up questions."""
         try {
             val modelPath = getModelPath()
             if (modelPath == null) {
-                loadError = "Model file not found or incomplete. Please select your GGUF model file (~2GB)."
+                loadError = "Model file not found. Please select Llama-3.2-1B-Instruct-Q4_K_M.gguf (~700MB)."
                 Log.e(TAG, loadError!!)
                 return@withContext false
             }
@@ -191,11 +188,11 @@ Do not give unsolicited advice. Ask thoughtful follow-up questions."""
             smolLM?.load(
                 modelPath = modelPath,
                 params = SmolLM.InferenceParams(
-                    minP = 0.1f,
+                    minP = 0.05f,           // Lower for faster sampling
                     temperature = 0.7f,
                     storeChats = true,
-                    contextSize = 2048,
-                    numThreads = 4,
+                    contextSize = 1024,      // Reduced for speed
+                    numThreads = 8,          // More threads for faster inference
                     useMmap = true,
                     useMlock = false
                 )

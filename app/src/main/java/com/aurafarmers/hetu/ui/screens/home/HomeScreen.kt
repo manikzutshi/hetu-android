@@ -114,13 +114,17 @@ fun HomeScreen(
             
             Spacer(modifier = Modifier.height(32.dp))
             
-            // Primary Action - Voice Journal
+            // Primary Action - Journal
             Button(
                 onClick = onNavigateToJournal,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(72.dp),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(20.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             ) {
                 Icon(
                     Icons.Filled.Mic,
@@ -130,7 +134,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(horizontalAlignment = Alignment.Start) {
                     Text(
-                        "Voice Journal",
+                        "Journal",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )

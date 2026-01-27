@@ -19,6 +19,7 @@ sealed class Screen(val route: String) {
     object Timeline : Screen("timeline")
     object Insights : Screen("insights")
     object Settings : Screen("settings")
+    object Feed : Screen("feed")
 }
 
 @Composable
@@ -65,6 +66,12 @@ fun HetuNavGraph(
         
         composable(Screen.Settings.route) {
             SettingsScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.Feed.route) {
+            com.aurafarmers.hetu.ui.screens.feed.FeedScreen(
                 onBack = { navController.popBackStack() }
             )
         }
