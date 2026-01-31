@@ -1,19 +1,26 @@
 package com.aurafarmers.hetu.ui.screens.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aurafarmers.hetu.ai.LLMService
+import com.aurafarmers.hetu.ai.STTService
 import com.aurafarmers.hetu.data.local.preferences.ThemeMode
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -21,6 +28,70 @@ fun SettingsScreen(
     onBack: () -> Unit,
     viewModel: SettingsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // Services from ViewModel (injected singletons)
+    val llmService = viewModel.llmService
+    val sttService = viewModel.sttService
+    
+    // LLM Model status state
+    var modelAvailable by remember { mutableStateOf(llmService.isModelAvailable()) }
+    var modelLoaded by remember { mutableStateOf(llmService.isLoaded()) }
+    var modelError by remember { mutableStateOf(llmService.getLoadError()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var copyProgress by remember { mutableStateOf(0) }
+    
+    // STT/Vosk status state
+    var sttAvailable by remember { mutableStateOf(sttService.isModelAvailable()) }
+    var sttLoaded by remember { mutableStateOf(sttService.isLoaded()) }
+    var sttModelName by remember { mutableStateOf(sttService.getModelName()) }
+    var sttError by remember { mutableStateOf(sttService.getError()) }
+    var sttLoading by remember { mutableStateOf(false) }
+    
+    // File picker for model selection
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isLoading = true
+                copyProgress = 0
+                try {
+                    llmService.copyModelFromUri(uri) { progress ->
+                        copyProgress = progress
+                    }
+                    modelAvailable = llmService.isModelAvailable()
+                    if (modelAvailable) {
+                        llmService.loadModel()
+                        modelLoaded = llmService.isLoaded()
+                        modelError = llmService.getLoadError()
+                    }
+                } catch (e: Exception) {
+                    modelError = e.message
+                }
+                isLoading = false
+            }
+        }
+    }
+    
+    // Folder picker for Vosk model
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                sttLoading = true
+                sttError = null
+                sttService.copyModelFromTreeUri(uri)
+                sttAvailable = sttService.isModelAvailable()
+                sttLoaded = sttService.isLoaded()
+                sttError = sttService.getError()
+                sttModelName = sttService.getModelName()
+                sttLoading = false
+            }
+        }
+    }
+    
     val themeMode by viewModel.themeMode.collectAsState()
     val notifFrequency by viewModel.notificationFrequency.collectAsState()
     val notifPersonality by viewModel.notificationPersonality.collectAsState()
@@ -51,6 +122,8 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp)
         ) {
+            // ... (rest of code)
+
             // Appearance
             Text(
                 "Appearance",
@@ -256,6 +329,283 @@ fun SettingsScreen(
                     )
                 }
             }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // AI Model Section
+            Text(
+                "AI Model",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (modelLoaded) MaterialTheme.colorScheme.primaryContainer 
+                       else if (modelAvailable) MaterialTheme.colorScheme.secondaryContainer
+                       else MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (modelLoaded) Icons.Filled.CheckCircle
+                            else if (modelAvailable) Icons.Outlined.Memory
+                            else Icons.Outlined.CloudDownload,
+                            contentDescription = null,
+                            tint = if (modelLoaded) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                when {
+                                    modelLoaded -> "Model Ready"
+                                    modelAvailable -> "Model Available"
+                                    else -> "No Model Selected"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                when {
+                                    modelLoaded -> llmService.getModelName() ?: "Model loaded"
+                                    modelAvailable -> "Tap Load to activate"
+                                    else -> "Select a .gguf model file"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    if (modelError != null && !modelLoaded) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            modelError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    
+                    if (isLoading) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { copyProgress / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "Copying model... $copyProgress%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { filePicker.launch("*/*") },
+                            enabled = !isLoading,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Outlined.FileOpen, null, Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (modelAvailable) "Change" else "Select")
+                        }
+                        
+                        if (modelAvailable && !modelLoaded) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isLoading = true
+                                        llmService.loadModel()
+                                        modelLoaded = llmService.isLoaded()
+                                        modelError = llmService.getLoadError()
+                                        isLoading = false
+                                    }
+                                },
+                                enabled = !isLoading,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Load Model")
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Voice Input Section (Vosk)
+            Text(
+                "Voice Input",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (sttLoaded) MaterialTheme.colorScheme.primaryContainer 
+                       else if (sttAvailable) MaterialTheme.colorScheme.tertiaryContainer
+                       else MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (sttLoaded) Icons.Filled.Mic
+                            else if (sttAvailable) Icons.Outlined.MicNone
+                            else Icons.Outlined.MicOff,
+                            contentDescription = null,
+                            tint = if (sttLoaded) MaterialTheme.colorScheme.primary
+                                   else if (sttAvailable) MaterialTheme.colorScheme.tertiary
+                                   else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                when {
+                                    sttLoaded -> "Voice Ready"
+                                    sttAvailable -> "Model Found"
+                                    else -> "No Model Found"
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                when {
+                                    sttLoaded -> "Using ${sttService.getModelName()}"
+                                    sttAvailable -> "Tap to load vosk model"
+                                    else -> "Download vosk-model-small-en-us"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    
+                    if (sttError != null && !sttLoaded) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            sttError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Select Folder Button
+                        OutlinedButton(
+                            onClick = { folderPicker.launch(null) },
+                            enabled = !sttLoading,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Select Folder")
+                        }
+                        
+                        // Check/Reload Button
+                        OutlinedButton(
+                            onClick = { 
+                                scope.launch {
+                                    sttLoading = true
+                                    sttError = null
+                                    sttService.loadModel() // Try auto-load first
+                                    sttAvailable = sttService.isModelAvailable()
+                                    sttLoaded = sttService.isLoaded()
+                                    sttError = sttService.getError()
+                                    sttModelName = sttService.getModelName()
+                                    sttLoading = false
+                                }
+                            },
+                            enabled = !sttLoading,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                            // Spacer(modifier = Modifier.width(4.dp)) // Save space
+                            Text("Reload")
+                        }
+                    }
+                    
+                    if (sttLoading) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "Copying/Loading model...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Developer Tools
+            Text(
+                "Developer",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Button(
+                onClick = { viewModel.generateMockData() },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            ) {
+                Icon(Icons.Default.Build, null, Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Generate Mock Data (30 Days)")
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Button(
+                onClick = { viewModel.deleteAllMockData() },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            ) {
+                Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Delete All Data")
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

@@ -27,5 +27,9 @@ class TrackRepository @Inject constructor(
     
     suspend fun deleteOutcome(outcome: OutcomeEntity) = outcomeDao.delete(outcome)
     
+    // Delete All
+    suspend fun deleteAllActions() = actionDao.deleteAll()
+    suspend fun deleteAllOutcomes() = outcomeDao.deleteAll()
+    
     // Joint queries could go here if needed, or handled in ViewModel
 }

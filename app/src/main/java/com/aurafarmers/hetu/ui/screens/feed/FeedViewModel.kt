@@ -23,15 +23,16 @@ class FeedViewModel @Inject constructor(
             initialValue = emptyList()
         )
 
-    fun addPost(mediaUri: String, caption: String?, location: String?, mediaType: String) {
+    fun addPost(mediaUri: String, caption: String?, location: String?, mediaType: String, category: String, timestamp: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
             feedPostDao.insert(
                 FeedPostEntity(
                     mediaUri = mediaUri,
                     caption = caption,
                     location = location,
-                    timestamp = System.currentTimeMillis(),
-                    mediaType = mediaType
+                    timestamp = timestamp,
+                    mediaType = mediaType,
+                    category = category
                 )
             )
         }

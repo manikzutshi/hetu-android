@@ -20,17 +20,25 @@ class TrackViewModel @Inject constructor(
         description: String,
         category: String,
         expectation: String?,
-        checkInDays: Int?
+        checkInDays: Int?,
+        date: LocalDate = LocalDate.now()
     ) {
         viewModelScope.launch {
+            // If backdating, set time to noon. If today, use current time.
+            val timestamp = if (date == LocalDate.now()) {
+                System.currentTimeMillis()
+            } else {
+                date.atTime(12, 0).toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+            }
+
             repository.insertAction(
                 ActionEntity(
                     description = description,
                     category = category,
-                    date = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE),
+                    date = date.format(DateTimeFormatter.ISO_LOCAL_DATE),
                     expectation = expectation,
                     checkInDays = checkInDays,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = timestamp
                 )
             )
         }
@@ -38,15 +46,22 @@ class TrackViewModel @Inject constructor(
 
     fun saveOutcome(
         description: String,
-        category: String
+        category: String,
+        date: LocalDate = LocalDate.now()
     ) {
         viewModelScope.launch {
+            val timestamp = if (date == LocalDate.now()) {
+                System.currentTimeMillis()
+            } else {
+                date.atTime(12, 0).toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+            }
+
             repository.insertOutcome(
                 OutcomeEntity(
                     description = description,
                     category = category,
-                    date = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE),
-                    timestamp = System.currentTimeMillis()
+                    date = date.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                    timestamp = timestamp
                 )
             )
         }

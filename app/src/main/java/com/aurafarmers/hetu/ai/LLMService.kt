@@ -22,12 +22,12 @@ class LLMService(
 ) {
     companion object {
         private const val TAG = "LLMService"
-        // User's actual model filename - 1B model for faster inference
-        private const val MODEL_FILENAME = "Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-        // Minimum valid model size (500MB - Q4 1B model should be at least this)
-        private const val MIN_MODEL_SIZE_BYTES = 500_000_000L
-        // System prompt for Hetu's personality - Warm but concise for speed
-        private const val SYSTEM_PROMPT = """You are Hetu, a warm and empathetic journal companion. Keep responses concise (1-2 sentences) but natural. Ask a gentle follow-up question."""
+        // Support any GGUF model - user selects via file picker
+        private const val MODEL_FILENAME = "model.gguf"  // Renamed on copy
+        // Minimum valid model size (300MB - support smaller quantized models)
+        private const val MIN_MODEL_SIZE_BYTES = 300_000_000L
+        // System prompt for Hetu - balanced personality
+        private const val SYSTEM_PROMPT = """You are Hetu, a warm and insightful wellness companion. You help users reflect on their habits, emotions, and daily experiences. Provide thoughtful, personalized responses based on what they share. Be supportive but also offer gentle insights when you notice patterns."""
     }
     
     private var smolLM: SmolLM? = null
@@ -35,20 +35,57 @@ class LLMService(
     private var loadError: String? = null
     
     /**
-     * Get the model file in app storage
+     * Get the model file in app storage - searches for any .gguf file
+     * Defaults to "model.gguf" if none found, for backward compatibility
      */
     private fun getModelFile(): File {
         val appDir = context.getExternalFilesDir(null) ?: context.filesDir
-        return File(appDir, MODEL_FILENAME)
+        // 1. Check for any existing .gguf file
+        val existingModels = appDir.listFiles { file -> 
+            file.isFile && file.name.endsWith(".gguf", ignoreCase = true) 
+        }
+        
+        if (existingModels != null && existingModels.isNotEmpty()) {
+            // Return the largest one (likely the main model)
+            val best = existingModels.maxByOrNull { it.length() }
+            if (best != null) return best
+        }
+        
+        // 2. Default fallback
+        return File(appDir, "model.gguf")
     }
     
     /**
-     * Get the model path from app's private storage
+     * Get the name of the file from a URI
+     */
+    private fun getFileName(uri: Uri): String {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (index != -1) result = cursor.getString(index)
+                    }
+                }
+            } catch (e: Exception) { Log.e(TAG, "Error getting filename", e) }
+        }
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/')
+            if (cut != -1) result = result?.substring(cut!! + 1)
+        }
+        return result ?: "model.gguf"
+    }
+
+    /**
+     * Get the model path - first checks app storage, then scans Downloads for any .gguf file
      */
     private fun getModelPath(): String? {
+        // First check app's private storage (uses dynamic lookup)
         val modelFile = getModelFile()
         if (modelFile.exists() && modelFile.canRead() && modelFile.length() >= MIN_MODEL_SIZE_BYTES) {
-            Log.d(TAG, "Found valid model: ${modelFile.absolutePath} (${modelFile.length() / 1024 / 1024} MB)")
+            Log.d(TAG, "Found valid model in app storage: ${modelFile.name} (${modelFile.length() / 1024 / 1024} MB)")
             return modelFile.absolutePath
         }
         
@@ -58,23 +95,39 @@ class LLMService(
             modelFile.delete()
         }
         
-        // Try common external paths (may require permission)
-        val externalPaths = listOf(
-            "/sdcard/Download/$MODEL_FILENAME",
-            "/storage/emulated/0/Download/$MODEL_FILENAME",
-            "${Environment.getExternalStorageDirectory().absolutePath}/Download/$MODEL_FILENAME"
+        // Scan Downloads folder for any .gguf file
+        val downloadDirs = listOf(
+            File("/sdcard/Download"),
+            File("/storage/emulated/0/Download"),
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath)
         )
         
-        for (path in externalPaths) {
-            val file = File(path)
-            if (file.exists() && file.canRead() && file.length() >= MIN_MODEL_SIZE_BYTES) {
-                Log.d(TAG, "Found model in external storage: $path (${file.length() / 1024 / 1024} MB)")
-                return path
+        for (dir in downloadDirs) {
+            if (dir.exists() && dir.isDirectory) {
+                val ggufFiles = dir.listFiles { file -> 
+                    file.isFile && file.name.endsWith(".gguf", ignoreCase = true) && file.length() >= MIN_MODEL_SIZE_BYTES
+                }
+                if (ggufFiles != null && ggufFiles.isNotEmpty()) {
+                    // Use the largest .gguf file (likely the best model)
+                    val bestModel = ggufFiles.maxByOrNull { it.length() }
+                    if (bestModel != null) {
+                        Log.d(TAG, "Found model in Downloads: ${bestModel.name} (${bestModel.length() / 1024 / 1024} MB)")
+                        return bestModel.absolutePath
+                    }
+                }
             }
         }
         
-        Log.e(TAG, "No valid model found")
+        Log.e(TAG, "No valid .gguf model found in app storage or Downloads")
         return null
+    }
+    
+    /**
+     * Get the name of the detected model file
+     */
+    fun getModelName(): String? {
+        val modelPath = getModelPath() ?: return null
+        return File(modelPath).name
     }
     
     /**
@@ -95,10 +148,22 @@ class LLMService(
      * Uses buffered streaming for large files
      */
     suspend fun copyModelFromUri(uri: Uri, onProgress: (Int) -> Unit = {}): Boolean = withContext(Dispatchers.IO) {
-        val destFile = getModelFile()
+        val appDir = context.getExternalFilesDir(null) ?: context.filesDir
+        
+        // Use original filename from URI
+        val originalName = getFileName(uri)
+        val destFile = File(appDir, originalName)
         
         try {
-            // Delete any existing partial file first
+            // Cleanup: Delete OTHER .gguf files to save space and avoid confusion
+            appDir.listFiles()?.forEach { file ->
+                if (file.isFile && file.name.endsWith(".gguf", ignoreCase = true) && file.name != originalName) {
+                    Log.i(TAG, "Deleting old/other model: ${file.name}")
+                    file.delete()
+                }
+            }
+            
+            // Delete if existing (to overwrite)
             if (destFile.exists()) {
                 destFile.delete()
             }
@@ -176,7 +241,7 @@ class LLMService(
         try {
             val modelPath = getModelPath()
             if (modelPath == null) {
-                loadError = "Model file not found. Please select Llama-3.2-1B-Instruct-Q4_K_M.gguf (~700MB)."
+                loadError = "Model file not found. Please select a GGUF model file from Settings."
                 Log.e(TAG, loadError!!)
                 return@withContext false
             }
@@ -188,11 +253,11 @@ class LLMService(
             smolLM?.load(
                 modelPath = modelPath,
                 params = SmolLM.InferenceParams(
-                    minP = 0.05f,           // Lower for faster sampling
-                    temperature = 0.7f,
+                    minP = 0.05f,
+                    temperature = 0.8f,      // Slightly more creative
                     storeChats = true,
-                    contextSize = 1024,      // Reduced for speed
-                    numThreads = 8,          // More threads for faster inference
+                    contextSize = 4096,      // Increased for Qwen 2.5 3B
+                    numThreads = 8,          // Good for Dimensity 7200
                     useMmap = true,
                     useMlock = false
                 )

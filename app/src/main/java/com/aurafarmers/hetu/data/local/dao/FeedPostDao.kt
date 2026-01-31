@@ -18,4 +18,7 @@ interface FeedPostDao {
 
     @Delete
     suspend fun delete(post: FeedPostEntity)
+    
+    @Query("DELETE FROM feed_posts")
+    suspend fun deleteAll()
 }

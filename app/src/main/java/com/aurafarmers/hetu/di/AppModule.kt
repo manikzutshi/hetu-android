@@ -63,12 +63,45 @@ object AppModule {
     
     // ============ AI Services ============
     
-    // AI Services - Manually instantiated in UI for now to avoid Hilt issues
-    // @Provides ...
+    @Provides
+    @Singleton
+    fun provideLLMService(@ApplicationContext context: Context): LLMService {
+        return LLMService(context)
+    }
     
-    // @Provides
-    // fun provideAudioRecorder...
+    @Provides
+    @Singleton
+    fun provideSTTService(@ApplicationContext context: Context): STTService {
+        return STTService(context)
+    }
     
-    // @Provides
-    // fun provideHetuAIManager...
+    @Provides
+    @Singleton
+    fun provideVADService(@ApplicationContext context: Context): VADService {
+        return VADService(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideTTSService(@ApplicationContext context: Context): TTSService {
+        return TTSService(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideAudioRecorder(@ApplicationContext context: Context): AudioRecorder {
+        return AudioRecorder(context)
+    }
+    
+    @Provides
+    @Singleton
+    fun provideHetuAIManager(
+        @ApplicationContext context: Context,
+        llmService: LLMService,
+        sttService: STTService,
+        ttsService: TTSService,
+        vadService: VADService
+    ): HetuAIManager {
+        return HetuAIManager(context, llmService, sttService, ttsService, vadService)
+    }
 }
