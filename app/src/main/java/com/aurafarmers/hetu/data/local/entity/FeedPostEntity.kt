@@ -11,5 +11,6 @@ data class FeedPostEntity(
     val caption: String?,
     val location: String?,
     val timestamp: Long,
-    val mediaType: String // "image" or "video"
+    val mediaType: String, // "image" or "video"
+    val category: String = "Life" // Default category
 )

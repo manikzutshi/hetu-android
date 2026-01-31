@@ -55,9 +55,15 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-
+        jniLibs {
+            pickFirst("lib/arm64-v8a/libonnxruntime.so")
+            pickFirst("lib/armeabi-v7a/libonnxruntime.so")
+            pickFirst("lib/x86/libonnxruntime.so")
+            pickFirst("lib/x86_64/libonnxruntime.so")
+        }
     }
 }
+
 
 configurations.all {
     resolutionStrategy {
@@ -71,14 +77,17 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.01.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material3:material3:1.2.0")
     implementation("io.coil-kt:coil-compose:2.5.0")
+    // Vosk for offline STT (replaces Sherpa/Whisper)
+    implementation("com.alphacephei:vosk-android:0.3.47")
     implementation("androidx.compose.material:material-icons-extended")
 
     // Navigation
@@ -110,7 +119,6 @@ dependencies {
 
     // On-device AI - SmolLM module for llama.cpp inference
     implementation(project(":smollm"))
-    // implementation("io.github.ljcamargo:llamacpp-kotlin:0.1.0")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.01.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")

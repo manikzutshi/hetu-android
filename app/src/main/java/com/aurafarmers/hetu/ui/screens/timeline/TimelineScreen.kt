@@ -79,7 +79,7 @@ fun TimelineScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(items, key = { it.id }) { item ->
+                items(items, key = { "${it.type}_${it.id}" }) { item ->
                     TimelineCard(item = item)
                 }
             }

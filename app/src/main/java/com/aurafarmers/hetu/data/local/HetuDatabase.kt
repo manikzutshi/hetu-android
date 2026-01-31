@@ -25,7 +25,7 @@ import net.sqlcipher.database.SupportFactory
         InsightEntity::class,
         FeedPostEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class HetuDatabase : RoomDatabase() {

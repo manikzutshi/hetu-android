@@ -56,9 +56,26 @@ fun JournalScreen(
     val focusManager = LocalFocusManager.current
     
     // Manual Instantiation of Services to avoid Hilt EntryPoint complexity in Composable
-    val llmService = remember { LLMService(context) }
-    val sttService = remember { STTService(context) }
-    val audioRecorder = remember { AudioRecorder(context) }
+    // Services are now provided by ViewModel (singleton instances)
+    val llmService = viewModel.llmService
+    val sttService = viewModel.sttService
+    val ttsService = viewModel.ttsService
+    val vadService = viewModel.vadService
+    val audioRecorder = viewModel.audioRecorder
+
+    LaunchedEffect(Unit) {
+        // Initialize services
+        // Initialize services - ensure singletons are ready
+        launch { vadService.configure() }
+        launch { sttService.loadModel() }
+        launch { ttsService.loadVoice() }
+        launch { if (!llmService.isLoaded()) llmService.loadModel() }
+        
+        // Loop management
+        if (audioRecorder.hasPermission()) {
+            viewModel.startWakeWordLoop()
+        }
+    }
     
     // State
     var inputText by remember { mutableStateOf("") }
@@ -103,23 +120,12 @@ fun JournalScreen(
         }
     }
     
-    // Ensure models are loaded
-    LaunchedEffect(Unit) {
-        // Run in background to avoid blocking UI
-        launch {
-            if (!llmService.isLoaded()) llmService.loadModel()
-        }
-        launch {
-            if (!sttService.isLoaded()) sttService.loadModel()
-        }
-    }
-
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-             // Permission granted
+             viewModel.startWakeWordLoop()
         } else {
             Toast.makeText(context, "Microphone permission needed for voice chat", Toast.LENGTH_SHORT).show()
         }
@@ -212,19 +218,22 @@ fun JournalScreen(
         }
     }
 
+    // Status
+    val currentStatus by viewModel.currentStatus.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
                     Column {
                         Text("Hetu Journal")
-                        if (isModelAvailable) {
-                            Text(
-                                "Model: Llama 1B (Fast)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = HetuColors.Sage
-                            )
-                        }
+                        // Show loaded model name
+                        val modelName = llmService.getModelName()?.take(20) ?: "No Model"
+                        Text(
+                            text = if (modelName != "No Model") "$currentStatus • $modelName" else currentStatus,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (currentStatus.contains("Listening")) MaterialTheme.colorScheme.primary else HetuColors.Sage
+                        )
                     }
                 },
                 navigationIcon = {

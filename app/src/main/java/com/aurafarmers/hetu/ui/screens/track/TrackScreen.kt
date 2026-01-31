@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -75,10 +76,26 @@ fun TrackScreen(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // Date
+            // Date Selection logic
+            var showDatePicker by remember { mutableStateOf(false) }
+            var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+
+            if (showDatePicker) {
+                com.aurafarmers.hetu.ui.components.DatePickerModal(
+                    onDateSelected = { date ->
+                        if (date != null) {
+                            selectedDate = date
+                        }
+                    },
+                    onDismiss = { showDatePicker = false }
+                )
+            }
+
+            // Date Card
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.clickable { showDatePicker = true }
             ) {
                 Row(
                     modifier = Modifier
@@ -94,16 +111,23 @@ fun TrackScreen(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            "Today",
+                            if (selectedDate == LocalDate.now()) "Today" else "Backdating Entry",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")),
+                            selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMMM d")),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        Icons.Outlined.Edit, 
+                        contentDescription = "Edit Date",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             
@@ -208,9 +232,9 @@ fun TrackScreen(
             Button(
                 onClick = { 
                     if (isAction) {
-                        viewModel.saveAction(description, selectedCategory!!, expectation, daysUntilCheck)
+                        viewModel.saveAction(description, selectedCategory!!, expectation, daysUntilCheck, selectedDate)
                     } else {
-                        viewModel.saveOutcome(description, selectedCategory!!)
+                        viewModel.saveOutcome(description, selectedCategory!!, selectedDate)
                     }
                     onBack()
                 },
